@@ -16,7 +16,7 @@ beta = 0.1    # Predation rate
 delta = 0.075 # Reproduction rate of predators per prey eaten
 gamma = 1.5   # Predator death rate
 
-for _ in range(10):
+for _ in range(100):
     # Initial conditions: [prey population, predator population]
     prey_ic = random.randint(5, 100)
     pred_ic = random.randint(5, 100)
@@ -44,3 +44,4 @@ for _ in range(10):
     plt.grid()
     plt.show()
     plt.savefig(f'results/predator_prey_solution_{prey_ic}_{pred_ic}.png')
+    plt.close()
