@@ -1,5 +1,3 @@
-
-
 import numpy as np
 import pandas as pd
 
@@ -22,24 +20,31 @@ def build_ppt_datasets(csv_files, n_datapoints, train_val_test_split=(0.8, 0.1, 
 
     inputs = np.vstack(inputs_list)
     outputs = np.vstack(outputs_list)
+    train_split, val_split, test_split = train_val_test_split
+    if n_datapoints == 'all':
+        n_datapoints = inputs.shape[0]
+    else:
+        n_datapoints = int(n_datapoints)
 
-    # Shuffle the data
-    indices = np.arange(inputs.shape[0])
+    test_len = int(n_datapoints * test_split)
+    train_val_len = n_datapoints - test_len
+    # Shuffle the data, but save some ordered test data
+    # TODO maybe sort out a better way to isolate test data 
+    test_inputs = inputs[-test_len:]
+    test_outputs = outputs[-test_len:]
+
+    indices = np.arange(train_val_len)
     np.random.shuffle(indices)
-    if n_datapoints != 'all':
-        indices = indices[:int(n_datapoints)]
     inputs = inputs[indices]
     outputs = outputs[indices]
-
-    # Calculate split indices
-    total_samples = inputs.shape[0]
-    train_split, val_split, _ = train_val_test_split
-    train_idx = int(total_samples * train_split)
-    val_idx = train_idx + int(total_samples * val_split)
-
+    
+    train_idx = int(n_datapoints * train_split)
     # Split the data
-    train_inputs, val_inputs, test_inputs = np.split(inputs, [train_idx, val_idx])
-    train_outputs, val_outputs, test_outputs = np.split(outputs, [train_idx, val_idx])
+    train_inputs = inputs[:train_idx]
+    val_inputs = inputs[train_idx:]
+    train_outputs = outputs[:train_idx]
+    val_outputs = outputs[train_idx:]
+    
 
     print("Datasets generated with sizes:")
     print(f"Train: {train_inputs.shape}, Val: {val_inputs.shape}, Test: {test_inputs.shape}")
@@ -49,7 +54,3 @@ def build_ppt_datasets(csv_files, n_datapoints, train_val_test_split=(0.8, 0.1, 
         "val": {'inputs': val_inputs, 'labels': val_outputs},
         "test": {'inputs': test_inputs, 'labels': test_outputs}
     }
-
-
-
-   

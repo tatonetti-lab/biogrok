@@ -222,6 +222,39 @@ def save_results_and_plots(config, model, training_losses, validation_losses,
     plt.savefig(os.path.join(experiment_dir, f"mae_curve.png"))
     plt.close()
 
+     # Plot Prey and Predator predictions vs actuals (Test Data)
+    test_tensor = torch.FloatTensor(config["test_data"]).to(config['gpu_device'])
+    test_labels_tensor = torch.FloatTensor(config["test_labels"]).to(config['gpu_device'])
+
+    model.eval()
+    model.to(config['gpu_device'])
+    with torch.no_grad():
+        predictions = model(test_tensor).cpu().numpy()
+        actuals = test_labels_tensor.cpu().numpy()
+
+    # Prey Predictions vs. Actuals
+    plt.figure()
+    plt.plot(predictions[:, 0], label='Predicted Prey', alpha=0.7)
+    plt.plot(actuals[:, 0], label='Actual Prey', alpha=0.7)
+    plt.xlabel('Sample Index')
+    plt.ylabel('Prey Population')
+    plt.title('Prey Population: Predictions vs. Actuals')
+    plt.legend()
+    plt.savefig(os.path.join(experiment_dir, "prey_population.png"))
+    plt.close()
+
+    # Predator Predictions vs. Actuals
+    plt.figure()
+    plt.plot(predictions[:, 1], label='Predicted Predator', alpha=0.7)
+    plt.plot(actuals[:, 1], label='Actual Predator', alpha=0.7)
+    plt.xlabel('Sample Index')
+    plt.ylabel('Predator Population')
+    plt.title('Predator Population: Predictions vs. Actuals')
+    plt.legend()
+    plt.savefig(os.path.join(experiment_dir, "predator_population.png"))
+    plt.close()
+
+
     print(f"Results and plots saved to {experiment_dir}")
 
 
@@ -296,7 +329,7 @@ if __name__ == "__main__":
                         "model": model,
                         "hidden_size": hidden_size,
                         "learning_rate": learning_rate,
-                        "epochs": 100000,
+                        "epochs": 1000,
                         "seed": 42,
                         "gpu_device": None,  # Will be set in perform_grid_search
                         "l2_lambda": l2_lambda,
