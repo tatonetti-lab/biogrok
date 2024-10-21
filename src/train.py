@@ -364,7 +364,6 @@ if __name__ == "__main__":
     # kinda hacky but works for now
     #TODO maybe make more things command line params, its just easier for me to look at this way
     
-    available_gpu_ids = [0, 1, 2, 3]
 
     # Run grid search with specified GPU IDs
-    perform_grid_search(configs, gpu_ids=available_gpu_ids)
+    perform_grid_search(configs, gpu_ids=args.available_gpu_ids)
