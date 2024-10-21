@@ -82,7 +82,7 @@ class PredatorPreyDataset(Dataset):
         plt.show()    
 
     #serialize and save dataloader params
-    def get_dataloader_params(self):
+    def get_dataset_params(self):
         """
         Serializes and returns the dataloader parameters as a dictionary.
         """
@@ -99,7 +99,7 @@ class PredatorPreyDataset(Dataset):
         }
         return params
 
-def get_dataloaders(train_start_end=[0, 200], val_start_end=[200, 300], test_start_end=[300, 400], step_size=1.0, batch_size=32):
+def get_dataloaders(train_start_end=[100, 300], val_start_end=[0, 100], test_start_end=[300, 400], step_size=1.0, batch_size=32):
     trainset = PredatorPreyDataset(start_step=train_start_end[0], end_time=train_start_end[1], step_size=step_size)
     trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=False)
     

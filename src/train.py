@@ -188,7 +188,12 @@ def save_results_and_plots(config, model, training_losses, validation_losses,
     base_results_dir = config["results_dir"]
     if not os.path.exists(base_results_dir):
         os.makedirs(base_results_dir)
-
+    else:
+        i = 0
+        while os.path.exists(f"{base_results_dir}_{i}"):
+            i += 1
+        base_results_dir = f"{base_results_dir}_{i}"
+        os.makedirs(base_results_dir)
 
     experiment_dir = os.path.join(base_results_dir, config['experiment_name'])
 
@@ -205,9 +210,9 @@ def save_results_and_plots(config, model, training_losses, validation_losses,
         "validation_mae": validation_mae,
         "test_loss": test_loss,
         "test_mae": test_mae,
-        "trainloader_params": config['trainloader'].get_dataloader_params(),
-        "valloader_params": config['valloader'].get_dataloader_params(),
-        "testloader_params": config['testloader'].get_dataloader_params()
+        "trainloader_params": config['trainloader'].dataset.get_dataset_params(),
+        "valloader_params": config['valloader'].dataset.get_dataset_params(),
+        "testloader_params": config['testloader'].dataset.get_dataset_params()
     }
 
     # Convert data to serializable format
@@ -311,13 +316,14 @@ def perform_grid_search(configs, gpu_ids=None):
 def parse_arguments():
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="Run grid search for MLP models.")
-    parser.add_argument("--available_gpu_ids", type=int, nargs='+', default=[0, 1, 2, 3],
+    parser.add_argument('-g', "--available_gpu_ids", type=int, nargs='+', default=[0, 1, 2, 3],
                         help="List of available GPU IDs (default: [0, 1, 2, 3])")
     parser.add_argument("--results_dir", type=str, default="../results/by_timepoint",
                         help="Directory to save the results (default: ../results/by_timepoint)")
     parser.add_argument("--datadir", type=str, default="../data",
                         help="Directory containing the CSV data files (default: ../data)")
     parser.add_argument("--n_datapoints", type=str, default=5000, help="number of datapoints to use. use all if you want all available data used")
+    parser.add_argument('-n', "--exp_name", type=str, default=None, help="prefix for the experiment name")
 
     return parser.parse_args()
 
@@ -335,7 +341,7 @@ if __name__ == "__main__":
     # get datasets
     csv_files = os.listdir(args.datadir)
     filenames = [os.path.join(args.datadir, f) for f in csv_files]
-    trainloader, valloader, testloader = get_dataloaders(train_start_end=[0, 200], val_start_end=[200, 300], test_start_end=[300, 400], step_size=1.0, batch_size=32)
+    trainloader, valloader, testloader = get_dataloaders(train_start_end=[100, 300], val_start_end=[0, 100], test_start_end=[300, 400], step_size=1.0, batch_size=32)
 
     # Define your configurations for the grid search
     configs = []
@@ -351,13 +357,13 @@ if __name__ == "__main__":
                         "model": model,
                         "hidden_size": hidden_size,
                         "learning_rate": learning_rate,
-                        "epochs": 100,
+                        "epochs": 10000,
                         "seed": 42,
                         "gpu_device": None,  # Will be set in perform_grid_search
                         "l2_lambda": l2_lambda,
                         "print_step": 2000,
                         "results_dir": args.results_dir,
-                        "experiment_name": f'{name}_hs_{hidden_size}_lr_{learning_rate}_wd_{l2_lambda}_datasz',  # Will be generated if None
+                        "experiment_name": f'HIII{name}_hs_{hidden_size}_lr_{learning_rate}_wd_{l2_lambda}_datasz',  # Will be generated if None
                         "exp_id": exp_counter,
                     }
                 configs.append(config)
