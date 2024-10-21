@@ -6,7 +6,7 @@ import os
 import json
 import multiprocessing
 import matplotlib.pyplot as plt
-from data_utils import build_ppt_datasets
+from data_utils import get_dataloaders
 import argparse
 
 """
@@ -72,8 +72,15 @@ def train_mlp(config):
     else:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    input_size = config["input_data"].shape[1]
-    output_size = config["labels"].shape[1]
+    # Get data loaders from config
+    trainloader = config["trainloader"]
+    valloader = config["valloader"]
+    testloader = config["testloader"]
+
+    # Determine input and output sizes from the first batch
+    sample_batch, sample_labels = next(iter(trainloader))
+    input_size = sample_batch.shape[1]
+    output_size = sample_labels.shape[1]
 
     # Initialize the model
     model_class = config["model"]
@@ -82,12 +89,6 @@ def train_mlp(config):
     
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=config["learning_rate"], weight_decay=config["l2_lambda"])
-
-    # Convert input data and validation data to PyTorch tensors and move to device
-    input_tensor = torch.FloatTensor(config["input_data"]).to(device)
-    labels_tensor = torch.FloatTensor(config["labels"]).to(device)
-    val_tensor = torch.FloatTensor(config["val_data"]).to(device)
-    val_labels_tensor = torch.FloatTensor(config["val_labels"]).to(device)
 
     # Lists to store training and validation losses and MAE
     training_losses = []
@@ -99,49 +100,63 @@ def train_mlp(config):
     for epoch in range(config["epochs"]):
         # Training phase
         model.train()
-        outputs = model(input_tensor)
-        loss = criterion(outputs, labels_tensor)
-
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-        # Calculate training loss and MAE
-        training_losses.append(loss.item())
-        train_mae = calculate_mae(outputs, labels_tensor)
-        training_mae.append(train_mae)
+        epoch_loss = 0.0
+        epoch_mae = 0.0
+        for batch, labels in trainloader:
+            batch, labels = batch.to(device), labels.to(device)
+            optimizer.zero_grad()
+            outputs = model(batch)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+            epoch_loss += loss.item()
+            epoch_mae += calculate_mae(outputs, labels)
+        
+        avg_loss = epoch_loss / len(trainloader)
+        avg_mae = epoch_mae / len(trainloader)
+        training_losses.append(avg_loss)
+        training_mae.append(avg_mae)
 
         # Validation phase
         model.eval()
+        val_loss = 0.0
+        val_mae = 0.0
         with torch.no_grad():
-            val_outputs = model(val_tensor)
-            val_loss = criterion(val_outputs, val_labels_tensor)
-            val_mae = calculate_mae(val_outputs, val_labels_tensor)
-            validation_losses.append(val_loss.item())
-            validation_mae.append(val_mae)
+            for batch, labels in valloader:
+                batch, labels = batch.to(device), labels.to(device)
+                outputs = model(batch)
+                val_loss += criterion(outputs, labels).item()
+                val_mae += calculate_mae(outputs, labels)
+        
+        avg_val_loss = val_loss / len(valloader)
+        avg_val_mae = val_mae / len(valloader)
+        validation_losses.append(avg_val_loss)
+        validation_mae.append(avg_val_mae)
 
         # Print progress
         if (epoch + 1) % config["print_step"] == 0 or epoch == 0:
             print(f'Epoch [{epoch + 1}/{config["epochs"]}] '
-                  f'Loss: {loss.item():.6f}, Validation Loss: {val_loss.item():.6f}, '
-                  f'Train MAE: {train_mae:.6f}, Val MAE: {val_mae:.6f}')
+                  f'Loss: {avg_loss:.6f}, Validation Loss: {avg_val_loss:.6f}, '
+                  f'Train MAE: {avg_mae:.6f}, Val MAE: {avg_val_mae:.6f}')
     
-    # Evaluate on test data if provided
-    test_loss = None
-    test_mae = None
-    if "test_data" in config and "test_labels" in config:
-        test_tensor = torch.FloatTensor(config["test_data"]).to(device)
-        test_labels_tensor = torch.FloatTensor(config["test_labels"]).to(device)
-        model.eval()
-        with torch.no_grad():
-            test_outputs = model(test_tensor)
-            test_loss = criterion(test_outputs, test_labels_tensor).item()
-            test_mae = calculate_mae(test_outputs, test_labels_tensor)
-        print(f'Test Loss: {test_loss:.6f}, Test MAE: {test_mae:.6f}')
+    # Evaluate on test data
+    model.eval()
+    test_loss = 0.0
+    test_mae = 0.0
+    with torch.no_grad():
+        for batch, labels in testloader:
+            batch, labels = batch.to(device), labels.to(device)
+            outputs = model(batch)
+            test_loss += criterion(outputs, labels).item()
+            test_mae += calculate_mae(outputs, labels)
+    
+    avg_test_loss = test_loss / len(testloader)
+    avg_test_mae = test_mae / len(testloader)
+    print(f'Test Loss: {avg_test_loss:.6f}, Test MAE: {avg_test_mae:.6f}')
 
     # Save results and plots
     save_results_and_plots(config, model, training_losses, validation_losses,
-                           training_mae, validation_mae, test_loss, test_mae)
+                           training_mae, validation_mae, avg_test_loss, avg_test_mae)
 
 
 
@@ -223,14 +238,21 @@ def save_results_and_plots(config, model, training_losses, validation_losses,
     plt.close()
 
      # Plot Prey and Predator predictions vs actuals (Test Data)
-    test_tensor = torch.FloatTensor(config["test_data"]).to(config['gpu_device'])
-    test_labels_tensor = torch.FloatTensor(config["test_labels"]).to(config['gpu_device'])
-
     model.eval()
     model.to(config['gpu_device'])
+    all_predictions = []
+    all_actuals = []
+
     with torch.no_grad():
-        predictions = model(test_tensor).cpu().numpy()
-        actuals = test_labels_tensor.cpu().numpy()
+        for inputs, labels in config['testloader']:
+            inputs = inputs.to(config['gpu_device'])
+            labels = labels.to(config['gpu_device'])
+            outputs = model(inputs)
+            all_predictions.append(outputs.cpu().numpy())
+            all_actuals.append(labels.cpu().numpy())
+
+    predictions = np.concatenate(all_predictions)
+    actuals = np.concatenate(all_actuals)
 
     # Prey Predictions vs. Actuals
     plt.figure()
@@ -310,7 +332,7 @@ if __name__ == "__main__":
     # get datasets
     csv_files = os.listdir(args.datadir)
     filenames = [os.path.join(args.datadir, f) for f in csv_files]
-    datasets = build_ppt_datasets(filenames, args.n_datapoints)
+    trainloader, valloader, testloader = get_dataloaders(train_start_end=[0, 200], val_start_end=[200, 300], test_start_end=[300, 400], step_size=1.0, batch_size=32)
 
     # Define your configurations for the grid search
     configs = []
@@ -320,22 +342,19 @@ if __name__ == "__main__":
             for l2_lambda in [0.0]:
                 for learning_rate in [0.0001]:
                     config = {
-                        "input_data": datasets["train"]["inputs"],
-                        "labels": datasets["train"]["labels"],
-                        "val_data": datasets["val"]["inputs"],
-                        "val_labels": datasets["val"]["labels"],
-                        "test_data": datasets["test"]["inputs"],
-                        "test_labels": datasets["test"]["labels"],
+                        "trainloader": trainloader,
+                        "valloader": valloader,
+                        "testloader": testloader,
                         "model": model,
                         "hidden_size": hidden_size,
                         "learning_rate": learning_rate,
-                        "epochs": 1000,
+                        "epochs": 100,
                         "seed": 42,
                         "gpu_device": None,  # Will be set in perform_grid_search
                         "l2_lambda": l2_lambda,
                         "print_step": 2000,
                         "results_dir": args.results_dir,
-                        "experiment_name": f'{name}_hs_{hidden_size}_lr_{learning_rate}_wd_{l2_lambda}_datasz_{datasets["train"]["inputs"].shape[0]}',  # Will be generated if None
+                        "experiment_name": f'!!!!!!{name}_hs_{hidden_size}_lr_{learning_rate}_wd_{l2_lambda}_datasz',  # Will be generated if None
                         "exp_id": exp_counter,
                     }
                 configs.append(config)
