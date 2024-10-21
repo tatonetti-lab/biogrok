@@ -79,8 +79,25 @@ class PredatorPreyDataset(Dataset):
         plt.xticks(tick_locations, tick_labels)
         plt.legend()
         plt.grid()
-        plt.show()
+        plt.show()    
 
+    #serialize and save dataloader params
+    def get_dataloader_params(self):
+        """
+        Serializes and returns the dataloader parameters as a dictionary.
+        """
+        params = {
+            'prey_ic': self.prey_ic,
+            'pred_ic': self.pred_ic,
+            'alpha': self.alpha,
+            'beta': self.beta,
+            'delta': self.delta,
+            'gamma': self.gamma,
+            'start_step': self.start_step,
+            'end_time': self.end_time,
+            'step_size': self.step_size
+        }
+        return params
 
 def get_dataloaders(train_start_end=[0, 200], val_start_end=[200, 300], test_start_end=[300, 400], step_size=1.0, batch_size=32):
     trainset = PredatorPreyDataset(start_step=train_start_end[0], end_time=train_start_end[1], step_size=step_size)

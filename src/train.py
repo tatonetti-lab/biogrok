@@ -204,7 +204,10 @@ def save_results_and_plots(config, model, training_losses, validation_losses,
         "training_mae": training_mae,
         "validation_mae": validation_mae,
         "test_loss": test_loss,
-        "test_mae": test_mae
+        "test_mae": test_mae,
+        "trainloader_params": config['trainloader'].get_dataloader_params(),
+        "valloader_params": config['valloader'].get_dataloader_params(),
+        "testloader_params": config['testloader'].get_dataloader_params()
     }
 
     # Convert data to serializable format
