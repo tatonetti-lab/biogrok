@@ -354,7 +354,7 @@ if __name__ == "__main__":
                         "l2_lambda": l2_lambda,
                         "print_step": 2000,
                         "results_dir": args.results_dir,
-                        "experiment_name": f'!!!!!!{name}_hs_{hidden_size}_lr_{learning_rate}_wd_{l2_lambda}_datasz',  # Will be generated if None
+                        "experiment_name": f'{name}_hs_{hidden_size}_lr_{learning_rate}_wd_{l2_lambda}_datasz',  # Will be generated if None
                         "exp_id": exp_counter,
                     }
                 configs.append(config)
