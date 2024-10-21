@@ -216,7 +216,7 @@ def save_results_and_plots(config, model, training_losses, validation_losses,
     # Save the results to a JSON file inside the experiment directory
     result_filename = os.path.join(experiment_dir, f"results.json")
     with open(result_filename, 'w') as f:
-        json.dump(serializable_data, f)
+        json.dump(serializable_data, f, indent=4)
 
     # Plot and save the training and validation loss curves
     plt.figure()
@@ -313,8 +313,8 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description="Run grid search for MLP models.")
     parser.add_argument("--available_gpu_ids", type=int, nargs='+', default=[0, 1, 2, 3],
                         help="List of available GPU IDs (default: [0, 1, 2, 3])")
-    parser.add_argument("--results_dir", type=str, default="/data1/home/kivelsons/biogrok/results/by_timepoint",
-                        help="Directory to save the results (default: /data1/home/kivelsons/biogrok/results/by_timepoint)")
+    parser.add_argument("--results_dir", type=str, default="../results/by_timepoint",
+                        help="Directory to save the results (default: ../results/by_timepoint)")
     parser.add_argument("--datadir", type=str, default="../data",
                         help="Directory containing the CSV data files (default: ../data)")
     parser.add_argument("--n_datapoints", type=str, default=5000, help="number of datapoints to use. use all if you want all available data used")
