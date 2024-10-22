@@ -60,6 +60,11 @@ class MLP(nn.Module):
 
 def train_mlp(args):
     set_seed(args.seed)
+
+
+     # Create results directory if it doesn't exist
+    plot_dir = Path("results/modadd_grok/plots")
+    plot_dir.mkdir(parents=True, exist_ok=True)
     
     device = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() and args.gpu is not None else "cpu")
     print(f"Using device: {device}")
@@ -151,7 +156,11 @@ def train_mlp(args):
         plt.title('Training and Validation MAE')
 
         plt.tight_layout()
-        plt.savefig(f'training_curves_{args.depth}_p{args.p}.png')
+        # plt.savefig(f'training_curves_{args.depth}_p{args.p}.png')
+
+        plot_path = plot_dir / f'training_curves_{args.depth}_p{args.p}.png'
+        plt.savefig(plot_path)
+
         if args.show_plot:
             plt.show()
 
