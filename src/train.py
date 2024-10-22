@@ -9,6 +9,9 @@ import matplotlib.pyplot as plt
 from data_utils import get_dataloaders
 import argparse
 
+import pandas as pd
+from torch.utils.data import TensorDataset, DataLoader
+
 """
 BE SURE TO CHANGE THE RESULTS FOLDER PATH TO MATCH YOUR LOCAL SET UP!
 its an absolute path for me rn beacuse it was giving me saving permission errors otherwise and I haven't gotten around to sorting it out
@@ -58,6 +61,86 @@ class DeepMLP(nn.Module):
 def calculate_mae(outputs, labels):
     mae = torch.mean(torch.abs(outputs - labels)).item()
     return mae
+
+
+def train_mlp_orig(input_data, labels, val_data, val_labels, hidden_size=10, learning_rate=0.01, epochs=100, seed=42, gpu_device=None, l2_lambda=0.01, depth="shallow", print_step=100):
+    # Set the seed for reproducibility
+    set_seed(seed)
+
+    # Set device to the specified GPU if available, otherwise CPU
+    if gpu_device is not None and torch.cuda.is_available():
+        device = torch.device(f"cuda:{gpu_device}")
+    else:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    print(f"Using device: {device}")
+
+    input_size = input_data.shape[1]
+    output_size = labels.shape[1]
+
+    # Initialize the model, loss function, and optimizer
+    if depth == "shallow":
+        model = MLP(input_size, hidden_size, output_size).to(device)
+    elif depth == "deep":
+        model = DeepMLP(input_size, hidden_size, output_size).to(device)
+    else:
+        raise Exception("Error in model depth provided.")
+    
+    criterion = nn.MSELoss()  # Assuming we're doing regression, adjust for classification if needed
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=l2_lambda)  # L2 regularization added via weight_decay
+
+    # Convert input data and validation data to PyTorch tensors and move to device
+    input_tensor = torch.FloatTensor(input_data).to(device)
+    labels_tensor = torch.FloatTensor(labels).to(device)
+    val_tensor = torch.FloatTensor(val_data).to(device)
+    val_labels_tensor = torch.FloatTensor(val_labels).to(device)
+
+    # Lists to store training and validation losses
+    training_losses = []
+    validation_losses = []
+    training_accuracies = []
+    validation_accuracies = []
+
+    # Training loop
+    for epoch in range(epochs):
+        # Forward pass on training data
+        model.train()
+        outputs = model(input_tensor)
+        loss = criterion(outputs, labels_tensor)
+
+        # Backward pass and optimization
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        # Store training loss
+        training_losses.append(loss.item())
+
+        # Calculate training accuracy
+        train_mae = calculate_mae(outputs, labels_tensor)
+        training_accuracies.append(train_mae)
+
+        # Evaluate on the validation set
+        model.eval()  # Set the model to evaluation mode
+        with torch.no_grad():  # Disable gradient calculation
+            val_outputs = model(val_tensor)
+            val_loss = criterion(val_outputs, val_labels_tensor)
+
+        # Store validation loss
+        validation_losses.append(val_loss.item())
+
+        # Calculate validation accuracy
+        val_mae = calculate_mae(val_outputs, val_labels_tensor)
+        validation_accuracies.append(val_mae)
+
+        if (epoch + 1) % print_step == 0:
+            print(f'Epoch [{epoch + 1}/{epochs}], Loss: {loss.item():.4f}, Validation Loss: {val_loss.item():.4f}, Train MAE: {train_mae:.4f}, Val MAE: {val_mae:.4f}')
+        
+    return {"model": model,
+            "training_losses": training_losses,
+            "validation_losses": validation_losses,
+            "training_acc": training_accuracies,
+            "validation_acc": validation_accuracies}
 
 def train_mlp(config):
     """
@@ -306,19 +389,21 @@ def perform_grid_search(configs, gpu_ids=None):
         gpu_id = gpu_ids[i % num_gpus]
         config["gpu_device"] = gpu_id
         config["exp_id"] = i  # Assign an experiment ID
-        p = multiprocessing.Process(target=train_mlp, args=(config,))
-        gpu_processes[gpu_id].append(p)
+        train_mlp(config)
 
-    for gpu_id in gpu_ids:
-        for p in gpu_processes[gpu_id]:
-            p.start()
-            p.join()  # Wait for the process to finish before starting the next one on this GPU
+    #     p = multiprocessing.Process(target=train_mlp, args=(config,))
+    #     gpu_processes[gpu_id].append(p)
 
-    # Ensure all processes have completed
-    for gpu_id in gpu_ids:
-        for p in gpu_processes[gpu_id]:
-            if p.is_alive():
-                p.join()
+    # for gpu_id in gpu_ids:
+    #     for p in gpu_processes[gpu_id]:
+    #         p.start()
+    #         p.join()  # Wait for the process to finish before starting the next one on this GPU
+
+    # # Ensure all processes have completed
+    # for gpu_id in gpu_ids:
+    #     for p in gpu_processes[gpu_id]:
+    #         if p.is_alive():
+    #             p.join()
 
 
 
@@ -357,21 +442,58 @@ if __name__ == "__main__":
     args = parse_arguments()
 
     # get datasets
-    csv_files = os.listdir(args.datadir)
-    filenames = [os.path.join(args.datadir, f) for f in csv_files]
-    trainloader, valloader, testloader = get_dataloaders(train_start_end=[100, 300], val_start_end=[0, 100], test_start_end=[300, 400], step_size=1.0, batch_size=128)
+    # csv_files = os.listdir(args.datadir)
+    # filenames = [os.path.join(args.datadir, f) for f in csv_files]
+    batch_size = 256
+    #trainloader, valloader, testloader = get_dataloaders(train_start_end=[100, 300], val_start_end=[0, 100], test_start_end=[300, 400], step_size=1.0, batch_size=batch_size)
+
+    datafile = '../data/predator_prey_solution_12_60.csv'
+    df = pd.read_csv(datafile)
+    initial_conditions = np.tile(df[df["Time"]==0][["Prey", "Predator"]].to_numpy()[0], (df.shape[0], 1))
+    times = df["Time"].to_numpy().reshape(-1,1)
+    inputs = np.hstack((initial_conditions, times))
+    outputs = df[["Prey","Predator"]].to_numpy()
+
+    training_data = {
+        'inputs': inputs[100:300,:],
+        'labels': outputs[100:300,:]
+    }
+    print(training_data['inputs'].shape)
+
+    validation_data = {
+        'inputs': inputs[:100,:],
+        'labels': outputs[:100,:]
+    }
+    print(validation_data['inputs'].shape)
+
+    testing_data = {
+        'inputs': inputs[300:400,:],
+        'labels': outputs[300:400,:]
+    }
+    print(testing_data['inputs'].shape)
+
+    # traindataset = TensorDataset(torch.tensor(training_data['inputs']), torch.tensor(training_data['labels']))
+    # trainloader = DataLoader(traindataset, batch_size=batch_size, shuffle=True)
+    # print(torch.tensor(training_data['inputs']).shape)
+
+    # valdataset = TensorDataset(torch.tensor(validation_data['inputs']), torch.tensor(validation_data['labels']))
+    # valloader = DataLoader(valdataset, batch_size=batch_size)
+
+    # testdataset = TensorDataset(torch.tensor(testing_data['inputs']), torch.tensor(testing_data['labels']))
+    # testloader = DataLoader(testdataset, batch_size=batch_size)
 
     # Define your configurations for the grid search
     configs = []
     exp_counter = 0
-    for name, model in [("mlp", MLP), ("deep_mlp", DeepMLP)]:
+    # for name, model in [("mlp", MLP), ("deep_mlp", DeepMLP)]:
+    for name, model in [("deep_mlp", DeepMLP),]:
         for hidden_size in args.hidden_sizes:
             for l2_lambda in args.l2_lambdas:
                 for learning_rate in args.learning_rates:
                     config = {
-                        "trainloader": trainloader,
-                        "valloader": valloader,
-                        "testloader": testloader,
+                        # "trainloader": trainloader,
+                        # "valloader": valloader,
+                        # "testloader": testloader,
                         "model": model,
                         "hidden_size": hidden_size,
                         "learning_rate": learning_rate,
@@ -379,18 +501,30 @@ if __name__ == "__main__":
                         "seed": 42,
                         "gpu_device": None,  # Will be set in perform_grid_search
                         "l2_lambda": l2_lambda,
-                        "print_step": 200,
+                        "print_step": int(args.epochs/10),
                         "results_dir": args.results_dir,
                         "experiment_name": f'{args.exp_name}_hs_{hidden_size}_lr_{learning_rate}_wd_{l2_lambda}',  # Will be generated if None
                         "exp_id": exp_counter,
                     }
-                configs.append(config)
-                exp_counter += 1
+                    results = train_mlp_orig(training_data['inputs'], 
+                        training_data['labels'], 
+                        validation_data['inputs'], 
+                        validation_data['labels'], 
+                        hidden_size=hidden_size, 
+                        learning_rate=learning_rate, 
+                        epochs=args.epochs, 
+                        seed=42,
+                        gpu_device=args.available_gpu_ids[0],
+                        l2_lambda=l2_lambda,
+                        depth="deep",
+                        print_step=int(args.epochs/10))
+                    configs.append(config)
+                    exp_counter += 1
 
     #TODO - why is this so slow
     #TODO - look into init conditions    
 
     # Run grid search with specified GPU IDs
-    perform_grid_search(configs, gpu_ids=args.available_gpu_ids)
+    #perform_grid_search(configs, gpu_ids=args.available_gpu_ids)
 
 
