@@ -188,18 +188,16 @@ def save_results_and_plots(config, model, training_losses, validation_losses,
     base_results_dir = config["results_dir"]
     if not os.path.exists(base_results_dir):
         os.makedirs(base_results_dir)
-    else:
-        i = 0
-        while os.path.exists(f"{base_results_dir}_{i}"):
-            i += 1
-        base_results_dir = f"{base_results_dir}_{i}"
-        os.makedirs(base_results_dir)
-
     experiment_dir = os.path.join(base_results_dir, config['experiment_name'])
 
+    if  os.path.exists(experiment_dir):
+        i = 0
+        while os.path.exists(f"{experiment_dir}_{i}"):
+            i += 1
+        experiment_dir = f"{experiment_dir}_{i}"
+
     # Create the experiment-specific directory
-    if not os.path.exists(experiment_dir):
-        os.makedirs(experiment_dir)
+    os.makedirs(experiment_dir)
 
     # Prepare data to save in a JSON file
     save_data = {
@@ -300,16 +298,25 @@ def perform_grid_search(configs, gpu_ids=None):
         num_gpus = len(gpu_ids)
     print(f"Number of GPUs available: {num_gpus}, GPU IDs: {gpu_ids}")
 
+    gpu_processes = {gpu_id: [] for gpu_id in gpu_ids}
+
     for i, config in enumerate(configs):
         gpu_id = gpu_ids[i % num_gpus]
         config["gpu_device"] = gpu_id
         config["exp_id"] = i  # Assign an experiment ID
         p = multiprocessing.Process(target=train_mlp, args=(config,))
-        p.start()
-        processes.append(p)
+        gpu_processes[gpu_id].append(p)
 
-    for p in processes:
-        p.join()
+    for gpu_id in gpu_ids:
+        for p in gpu_processes[gpu_id]:
+            p.start()
+            p.join()  # Wait for the process to finish before starting the next one on this GPU
+
+    # Ensure all processes have completed
+    for gpu_id in gpu_ids:
+        for p in gpu_processes[gpu_id]:
+            if p.is_alive():
+                p.join()
 
 
 
@@ -322,8 +329,15 @@ def parse_arguments():
                         help="Directory to save the results (default: ../results/by_timepoint)")
     parser.add_argument("--datadir", type=str, default="../data",
                         help="Directory containing the CSV data files (default: ../data)")
-    parser.add_argument("--n_datapoints", type=str, default=5000, help="number of datapoints to use. use all if you want all available data used")
     parser.add_argument('-n', "--exp_name", type=str, default=None, help="prefix for the experiment name")
+    parser.add_argument("--hidden_sizes", nargs="+", type=int, default=[512],
+                        help="List of hidden sizes to try (default: [512])")
+    parser.add_argument("--l2_lambdas", type=float, nargs='+', default=[0.0],
+                        help="List of L2 regularization lambdas to try (default: [0.0])")
+    parser.add_argument("--learning_rates", type=float, nargs='+', default=[0.0001],
+                        help="List of learning rates to try (default: [0.0001])")
+    parser.add_argument("--epochs", type=int, default=10000,
+                        help="Number of epochs to train (default: 10000)")
 
     return parser.parse_args()
 
@@ -341,15 +355,15 @@ if __name__ == "__main__":
     # get datasets
     csv_files = os.listdir(args.datadir)
     filenames = [os.path.join(args.datadir, f) for f in csv_files]
-    trainloader, valloader, testloader = get_dataloaders(train_start_end=[100, 300], val_start_end=[0, 100], test_start_end=[300, 400], step_size=1.0, batch_size=32)
+    trainloader, valloader, testloader = get_dataloaders(train_start_end=[100, 300], val_start_end=[0, 100], test_start_end=[300, 400], step_size=1.0, batch_size=128)
 
     # Define your configurations for the grid search
     configs = []
     exp_counter = 0
     for name, model in [("mlp", MLP), ("deep_mlp", DeepMLP)]:
-        for hidden_size in [512]:
-            for l2_lambda in [0.0]:
-                for learning_rate in [0.0001]:
+        for hidden_size in args.hidden_sizes:
+            for l2_lambda in args.l2_lambdas:
+                for learning_rate in args.learning_rates:
                     config = {
                         "trainloader": trainloader,
                         "valloader": valloader,
@@ -357,13 +371,13 @@ if __name__ == "__main__":
                         "model": model,
                         "hidden_size": hidden_size,
                         "learning_rate": learning_rate,
-                        "epochs": 10000,
+                        "epochs": args.epochs,
                         "seed": 42,
                         "gpu_device": None,  # Will be set in perform_grid_search
                         "l2_lambda": l2_lambda,
-                        "print_step": 2000,
+                        "print_step": 200,
                         "results_dir": args.results_dir,
-                        "experiment_name": f'HIII{name}_hs_{hidden_size}_lr_{learning_rate}_wd_{l2_lambda}_datasz',  # Will be generated if None
+                        "experiment_name": f'{args.exp_name}_hs_{hidden_size}_lr_{learning_rate}_wd_{l2_lambda}',  # Will be generated if None
                         "exp_id": exp_counter,
                     }
                 configs.append(config)
