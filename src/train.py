@@ -156,7 +156,8 @@ def train_mlp(config):
 
     # Save results and plots
     save_results_and_plots(config, model, training_losses, validation_losses,
-                           training_mae, validation_mae, avg_test_loss, avg_test_mae)
+                           training_mae, validation_mae, avg_test_loss, avg_test_mae,
+                           )
 
 
 
@@ -180,8 +181,23 @@ def convert_to_serializable(obj):
         return str(obj)
 
 
+def get_predictions(model, dataloader, device):
+    model.eval()
+    all_predictions = []
+    all_actuals = []
+    with torch.no_grad():
+        for inputs, labels in dataloader:
+            inputs = inputs.to(device)
+            labels = labels.to(device)
+            outputs = model(inputs)
+            all_predictions.append(outputs.cpu().numpy())
+            all_actuals.append(labels.cpu().numpy())
+    return np.concatenate(all_predictions), np.concatenate(all_actuals)
+
+
 def save_results_and_plots(config, model, training_losses, validation_losses,
-                           training_mae, validation_mae, test_loss, test_mae):
+                           training_mae, validation_mae, test_loss, test_mae,
+                           ):
     """Save training results and plots to a dedicated directory for the experiment."""
     
     # Create a base results directory if it doesn't exist
@@ -243,45 +259,31 @@ def save_results_and_plots(config, model, training_losses, validation_losses,
     plt.savefig(os.path.join(experiment_dir, f"mae_curve.png"))
     plt.close()
 
-     # Plot Prey and Predator predictions vs actuals (Test Data)
-    model.eval()
-    model.to(config['gpu_device'])
-    all_predictions = []
-    all_actuals = []
 
-    with torch.no_grad():
-        for inputs, labels in config['testloader']:
-            inputs = inputs.to(config['gpu_device'])
-            labels = labels.to(config['gpu_device'])
-            outputs = model(inputs)
-            all_predictions.append(outputs.cpu().numpy())
-            all_actuals.append(labels.cpu().numpy())
+    for phase, dataloader in [('Train', config['trainloader']), ('Val', config['valloader']), ('Test', config['testloader'])]:
+        
+        predictions, actuals = get_predictions(model, dataloader, config['gpu_device'])
 
-    predictions = np.concatenate(all_predictions)
-    actuals = np.concatenate(all_actuals)
+        plt.figure()
+        plt.plot(predictions[:, 0], label='Predicted Prey', alpha=0.7)
+        plt.plot(actuals[:, 0], label='Actual Prey', alpha=0.7)
+        plt.xlabel('Sample Index')
+        plt.ylabel('Prey Population')
+        plt.title(f'{phase}: Prey Population: Predictions vs. Actuals')
+        plt.legend()
+        plt.savefig(os.path.join(experiment_dir, f"{phase}_prey_population.png"))
+        plt.close()
 
-    # Prey Predictions vs. Actuals
-    plt.figure()
-    plt.plot(predictions[:, 0], label='Predicted Prey', alpha=0.7)
-    plt.plot(actuals[:, 0], label='Actual Prey', alpha=0.7)
-    plt.xlabel('Sample Index')
-    plt.ylabel('Prey Population')
-    plt.title('Prey Population: Predictions vs. Actuals')
-    plt.legend()
-    plt.savefig(os.path.join(experiment_dir, "prey_population.png"))
-    plt.close()
-
-    # Predator Predictions vs. Actuals
-    plt.figure()
-    plt.plot(predictions[:, 1], label='Predicted Predator', alpha=0.7)
-    plt.plot(actuals[:, 1], label='Actual Predator', alpha=0.7)
-    plt.xlabel('Sample Index')
-    plt.ylabel('Predator Population')
-    plt.title('Predator Population: Predictions vs. Actuals')
-    plt.legend()
-    plt.savefig(os.path.join(experiment_dir, "predator_population.png"))
-    plt.close()
-
+        # Predator Predictions vs. Actuals
+        plt.figure()
+        plt.plot(predictions[:, 1], label='Predicted Predator', alpha=0.7)
+        plt.plot(actuals[:, 1], label='Actual Predator', alpha=0.7)
+        plt.xlabel('Sample Index')
+        plt.ylabel('Predator Population')
+        plt.title(f'{phase}: Predator Population: Predictions vs. Actuals')
+        plt.legend()
+        plt.savefig(os.path.join(experiment_dir, f"{phase}_predator_population.png"))
+        plt.close()
 
     print(f"Results and plots saved to {experiment_dir}")
 
@@ -341,6 +343,8 @@ def parse_arguments():
 
     return parser.parse_args()
 
+
+
 if __name__ == "__main__":
 
     """
@@ -383,10 +387,10 @@ if __name__ == "__main__":
                 configs.append(config)
                 exp_counter += 1
 
-    # List of available GPU IDs - for now just "nvidia-smi ing" it to get the list before running
-    # kinda hacky but works for now
-    #TODO maybe make more things command line params, its just easier for me to look at this way
-    
+    #TODO - why is this so slow
+    #TODO - look into init conditions    
 
     # Run grid search with specified GPU IDs
     perform_grid_search(configs, gpu_ids=args.available_gpu_ids)
+
+
